@@ -3,7 +3,7 @@ from sqlite3.dbapi2 import Cursor
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.dispatcher import filters
 from aiogram.types.message import Message
-from config import API_TOKEN, Balance, admin_id
+from config import API_TOKEN, Balance, admin_id, mathList
 import asyncio
 from contextlib import suppress
 from aiogram.utils.exceptions import (MessageToEditNotFound, MessageCantBeEdited, MessageCantBeDeleted,MessageToDeleteNotFound)
@@ -28,10 +28,6 @@ logging.basicConfig(level=logging.INFO)
 @dp.message_handler(commands='start')
 async def send_welcome(message: types.Message):
     try:
-        if message.from_user.id == admin_id:
-            is_chat_admin = True
-        else:
-            pass
         startMoney = 1000
         conn = sqlite3.connect('data.db')
         cur = conn.cursor()
@@ -149,7 +145,7 @@ async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
 
 
 @dp.message_handler(commands='listBet')
-async def send_welcome(message: types.Message):
+async def send_listbet(message: types.Message):
     global arrayBet
     text = ""
     for item in arrayBet.items():
@@ -157,6 +153,19 @@ async def send_welcome(message: types.Message):
     
     text += "\nЕсли хотите проверить баланс - /balance"
     await message.reply(text)
+
+
+@dp.message_handler(commands='listMatch')
+async def send_listbet(message: types.Message):
+    global mathList
+    conn = sqlite3.connect('data.db')
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM matches')
+    data = cur.fetchall()
+    conn.commit()
+    for i in data:
+        mathList += i[0] + " :" + i[1] + " vs " + i[2]+"\n"
+    await message.reply(mathList)
 
 
 @dp.message_handler(commands='createMatch')
@@ -179,9 +188,20 @@ async def nameMatch(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=CreateFight.E3)
 async def nameMatch(message: types.Message, state: FSMContext):
+    global mathList
+    await state.update_data(teamSecond=message.text)
     data = await state.get_data()
-    print(data)
-    print(message.text)
+    conn = sqlite3.connect('data.db')
+    cur = conn.cursor()
+    cur.execute('CREATE TABLE IF NOT EXISTS matches(name_match TEXT, firstTeam TEXT, secondTeam TEXT)')
+    cur.execute(f'INSERT INTO matches VALUES("{data["name"]}", "{data["teamFirst"]}","{data["teamSecond"]}")')
+    conn.commit()
+    cur.execute('SELECT user_id FROM users')
+    data = cur.fetchall() 
+    for i in data:
+        await bot.send_message(i[0], text="Доступная новая ставка!")
+    conn.commit()
+    await state.finish()
 
 
 
