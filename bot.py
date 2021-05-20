@@ -1,26 +1,37 @@
 import logging
 from sqlite3.dbapi2 import Cursor
 from aiogram import Bot, Dispatcher, executor, types
-import config
+from aiogram.dispatcher import filters
+from aiogram.types.message import Message
+from config import API_TOKEN, Balance, admin_id
 import asyncio
 from contextlib import suppress
 from aiogram.utils.exceptions import (MessageToEditNotFound, MessageCantBeEdited, MessageCantBeDeleted,MessageToDeleteNotFound)
 import sqlite3
+from states.createMatch import CreateFight
+from aiogram.dispatcher import FSMContext
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-balance = config.Balance
+
+balance = Balance
 arrayBet ={
     "edik": 0,
     "max": 0,
     "alan": 0
 }
-bot = Bot(token=config.API_TOKEN)
-dp = Dispatcher(bot)
+bot = Bot(token=API_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 logging.basicConfig(level=logging.INFO)
 
 
 @dp.message_handler(commands='start')
 async def send_welcome(message: types.Message):
     try:
+        if message.from_user.id == admin_id:
+            is_chat_admin = True
+        else:
+            pass
         startMoney = 1000
         conn = sqlite3.connect('data.db')
         cur = conn.cursor()
@@ -38,7 +49,7 @@ async def send_welcome(message: types.Message):
         cur = conn.cursor()
         cur.execute(f'INSERT INTO users VALUES("{message.from_user.id}")')
         conn.commit()
-    await message.reply("To bet on today's match, write /go")
+    await message.reply("Хотите поставить на матч?\nНапишите - /go")
 
 
 @dp.message_handler(commands='balance')
@@ -49,7 +60,7 @@ async def send_welcome(message: types.Message):
     cur.execute(f"SELECT user_balance FROM users WHERE user_id = {man_id}")
     data = cur.fetchone()
     conn.commit()
-    await message.reply(f"your balance: {data[0]}")
+    await message.reply(f"Ваш счет: {data[0]}")
 
 async def delete_message(message: types.Message, sleep_time: int = 0):
     await asyncio.sleep(sleep_time)
@@ -74,11 +85,11 @@ async def send_welcome(message: types.Message):
     cur.execute(f"SELECT * from users WHERE user_id = {man_id}")
     data = cur.fetchone()
     if data[2] > 0:
-        msg = await message.reply("Сhoose who will win today?", reply_markup=keyboard_markup)
+        msg = await message.reply("Кто выиграет?", reply_markup=keyboard_markup)
     else:
-        msg = await message.reply("Wait for the end of the match!")
+        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance")
     conn.commit()
-    asyncio.create_task(delete_message(msg, 4))
+    asyncio.create_task(delete_message(msg, 30))
 
 
 
@@ -100,7 +111,7 @@ async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
     cur = conn.cursor()
     man_id = query.from_user.id
     cur.execute(f"UPDATE users SET user_choice='{answer_data}' WHERE user_id={man_id}")
-    text = 'Great job!! Good luck'
+    text = 'Отлично сработано! Выберите сумму'
     conn.commit()
     await bot.send_message(query.from_user.id, text , reply_markup=keyboard_markup)
 
@@ -116,19 +127,21 @@ async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
     cur.execute(f"SELECT * FROM users WHERE user_id={man_id}")
     data = cur.fetchone()
     global arrayBet
-    if answer_data == '1000':
-        text = 'Are you sure? /listBet'
+    if answer_data == '1000' and data[2]>=1000:
+        text = 'Серьезная ставочка /listBet'
         arrayBet[data[3]] += 1000
         cur.execute(f"UPDATE users SET user_balance={data[2]-1000} WHERE user_id={man_id}")
-    elif answer_data == '500':
-        text = 'Serious bet /listBet'
+    elif answer_data == '500' and data[2]>=500:
+        text = 'А вы уверены? /listBet'
         arrayBet[data[3]] += 500
         cur.execute(f"UPDATE users SET user_balance={data[2]-500} WHERE user_id={man_id}")
     else:
-        if answer_data == "250":
-            text = 'Ha, pennies /listBet'
+        if answer_data == "250" and data[2]>=250:
+            text = 'Ха, клоун! Поставь ты больше /listBet'
             arrayBet[data[3]] += 250
             cur.execute(f"UPDATE users SET user_balance={data[2]-250} WHERE user_id={man_id}")
+        else:
+            text = 'На вашем счету нет столько средств! Пополните счет'
     conn.commit()
 
     await bot.send_message(query.from_user.id, text)
@@ -142,8 +155,35 @@ async def send_welcome(message: types.Message):
     for item in arrayBet.items():
         text +="- " + item[0]+" "+str(item[1]) + "\n"
     
-    text += "\n if you want check your balance /balance"
+    text += "\nЕсли хотите проверить баланс - /balance"
     await message.reply(text)
+
+
+@dp.message_handler(commands='createMatch')
+async def CreateMatch(message: types.Message):
+    if message.from_user.id == admin_id:
+        await bot.send_message(admin_id, text='Название мероприятия')
+        await CreateFight.first()
+
+@dp.message_handler(state=CreateFight.E1)
+async def nameMatch(message: types.Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer("Название первой команды", parse_mode="HTML")
+    await CreateFight.next() 
+
+@dp.message_handler(state=CreateFight.E2)
+async def nameMatch(message: types.Message, state: FSMContext):
+    await state.update_data(teamFirst=message.text)
+    await message.answer("Название второй команды", parse_mode="HTML")
+    await CreateFight.next() 
+
+@dp.message_handler(state=CreateFight.E3)
+async def nameMatch(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    print(data)
+    print(message.text)
+
+
 
 
 
