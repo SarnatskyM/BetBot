@@ -1,20 +1,18 @@
 from asyncio.windows_events import NULL
-from sqlite3.dbapi2 import Cursor
+from typing import Set
 from aiogram import types
-from aiogram.types import callback_query
-from aiogram.types import message
-from aiogram.types.message import Message
+from aiogram.dispatcher.filters import Text
+from keyboards import keyboard
 from config import *
 from contextlib import suppress
 from aiogram.utils.exceptions import (MessageToEditNotFound, MessageCantBeEdited, MessageCantBeDeleted,MessageToDeleteNotFound)
 import sqlite3, asyncio
-from states.createMatch import CreateFight
+from states.createMatch import CreateFight, SetBet, SetWinner
 from aiogram.dispatcher import FSMContext
 from loader import dp, bot
 
 
 balance = Balance
-
 
 @dp.message_handler(commands='start')
 async def send_welcome(message: types.Message):
@@ -35,10 +33,13 @@ async def send_welcome(message: types.Message):
         cur = conn.cursor()
         cur.execute(f'INSERT INTO users VALUES("{message.from_user.id}")')
         conn.commit()
-    await message.reply("Хотите поставить на матч?\nНапишите - /allMatches")
+    if message.from_user.id != admin_id:
+        await message.reply("Хотите поставить на матч?\nНапишите - /allMatches", reply_markup=keyboard.allCommands)
+    else:
+        await message.reply("Хотите поставить на матч?\nНапишите - /allMatches", reply_markup=keyboard.allCommandsAdmin)
 
 
-@dp.message_handler(commands='balance')
+@dp.message_handler(Text(equals=["Баланс"]))
 async def send_balance(message: types.Message):
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
@@ -46,14 +47,14 @@ async def send_balance(message: types.Message):
     cur.execute(f"SELECT user_balance FROM users WHERE user_id = {man_id}")
     data = cur.fetchone()
     conn.commit()
-    await message.reply(f"Ваш счет: {data[0]}")
+    await message.reply(f"Ваш счет: {data[0]}", reply_markup=keyboard.allCommands)
 
 async def delete_message(message: types.Message, sleep_time: int = 0):
     await asyncio.sleep(sleep_time)
     with suppress(MessageCantBeDeleted, MessageToDeleteNotFound):
         await message.delete()
 
-@dp.message_handler(commands='allMatches')
+@dp.message_handler(Text(equals=["Все матчи"]))
 async def send_allMatch(message: types.Message):
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
@@ -63,12 +64,12 @@ async def send_allMatch(message: types.Message):
     for i in data:
         keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
         text_and_data = (
-            (i[2], 'firstTeam'),
-            (i[3], 'secondTeam'),
+            (i[2], f"{i[2]}|{i[0]}"),
+            (i[3], f"{i[3]}|{i[0]}"),
         )
         row_btns = (types.InlineKeyboardButton(text, callback_data=data) for text, data in text_and_data)
         keyboard_markup.row(*row_btns)
-        await message.reply(f"{i[1]}\n{i[2]} vs {i[3]}", reply_markup=keyboard_markup)
+        await message.reply(f"{i[1]}\n{i[2]} vs {i[3]}", reply_markup=keyboard_markup, reply=False)
     man_id = message.from_user.id
     conn.commit()
     cur.execute(f"SELECT * from users WHERE user_id = {man_id}")
@@ -76,58 +77,51 @@ async def send_allMatch(message: types.Message):
     if data[2] > 0:
         msg = await message.reply("Кто выиграет?", reply=False)
     else:
-        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance")
+        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance", reply_markup=keyboard.allCommands)
     conn.commit()
     asyncio.create_task(delete_message(msg, 30))
 
 
-
-@dp.callback_query_handler(text = 'firstTeam') 
-@dp.callback_query_handler(text = 'secondTeam') 
-async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
-    print(query.keyboard_markup)
-    keyboard_markup = types.InlineKeyboardMarkup(row_width=2)
-    text_and_data = (
-        ('1000', 1000),
-        ('500', 500),
-        ('250', 250),
-    )
-    row_btns = (types.InlineKeyboardButton(text, callback_data=data) for text, data in text_and_data)
-    keyboard_markup.row(*row_btns)
-    conn = sqlite3.connect('data.db')
-    cur = conn.cursor()
-    cur.execute('CREATE TABLE IF NOT EXISTS bets(id INTEGER PRIMARY KEY, user_id INTEGER, user_choice INTEGER, user_bet BIGINT)')
-    conn.commit()
-    cur.execute(f'INSERT INTO bets VALUES(NULL,"{query.from_user.id}", "{query.data}", NULL)')
-    text = 'Отлично сработано! Выберите сумму'
-    conn.commit()
-    await bot.send_message(query.from_user.id, text , reply_markup=keyboard_markup)
-
-
-@dp.callback_query_handler(text='1000')  # if cb.data == '1000 money' 
-@dp.callback_query_handler(text='500')  # if cb.data == '500 money'
-@dp.callback_query_handler(text='250')  # if cb.data == '250 money'
+@dp.callback_query_handler()
 async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
-    man_id = query.from_user.id
-    cur.execute(f'SELECT * FROM bets WHERE user_id={man_id}')
+    varb = query.data.split("|")
+    cur.execute('CREATE TABLE IF NOT EXISTS bets(id INTEGER PRIMARY KEY, user_id INTEGER, user_choice INTEGER, user_bet BIGINT, id_match INTEGER)')
+    conn.commit()
+    cur.execute(f'SELECT id FROM bets WHERE user_id={query.from_user.id} AND id_match={varb[1]}')
     data = cur.fetchone()
-    print(data)
-    if data[3] == None: 
+    if data==None:
+        cur.execute(f'INSERT INTO bets VALUES(NULL,"{query.from_user.id}", "{varb[0]}", NULL, "{varb[1]}")')
+        text = 'Отлично сработано! Выберите сумму'
+        conn.commit()
+        await bot.send_message(query.from_user.id, text , reply_markup=keyboard.betOnmatch)
+        await SetBet.B1.set()
+    else:
+        await bot.send_message(query.from_user.id,text="Вы уже поставили на этот матч", reply_markup=keyboard.allCommands)
+
+
+@dp.message_handler(state=SetBet.B1)
+async def inline_kb_answer_callback_handler(message: types.Message, state: FSMContext):
+    conn = sqlite3.connect('data.db')
+    cur = conn.cursor()
+    man_id = message.from_user.id
+    cur.execute(f'SELECT user_bet FROM bets WHERE user_id={man_id} AND user_bet = NULL')
+    data = cur.fetchone()
+    if data == None:
         cur.execute(f'SELECT * FROM users WHERE user_id={man_id}')
         data = cur.fetchone()
-        if query.data == '1000' and data[2]>=1000:
-            text = 'Серьезная ставочка /listBet'
+        if message.text == '1000' and data[2]>=1000:
+            text = 'Спасибо за ставку!'
             cur.execute(f'UPDATE users SET user_balance={data[2]-1000} WHERE user_id={man_id}')
             cur.execute(f"UPDATE bets SET user_bet={1000} WHERE user_id={man_id}")
-        elif query.data == '500' and data[2]>=500:
-            text = 'А вы уверены? /listBet'
+        elif message.text == '500' and data[2]>=500:
+            text = 'Спасибо за ставку!'
             cur.execute(f'UPDATE users SET user_balance={data[2]-500} WHERE user_id={man_id}')
             cur.execute(f'UPDATE bets SET user_bet={500} WHERE user_id={man_id}')
         else:
-            if query.data == '250' and data[2]>=250:
-                text = 'Ха, клоун! Поставь ты больше /listBet'
+            if message.text == '250' and data[2]>=250:
+                text = 'Ха, клоун! Поставь ты больше'
                 cur.execute(f'UPDATE users SET user_balance={data[2]-250} WHERE user_id={man_id}')
                 cur.execute(f'UPDATE bets SET user_bet={250} WHERE user_id={man_id}')
             else:
@@ -135,29 +129,61 @@ async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
         conn.commit()
     else:
         text = 'Вы уже ставили на этот матч'
-    await bot.send_message(query.from_user.id, text)
+    await bot.send_message(message.from_user.id, text, reply_markup=keyboard.allCommands)
+    await state.finish()
 
 
 
-@dp.message_handler(commands='listBet')
+@dp.message_handler(Text(equals=["Список моих ставок"]))
 async def send_listbet(message: types.Message):
-    a = 1
-
-
-@dp.message_handler(commands='listMatch')
-async def send_listMatch(message: types.Message):
-    global mathList
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
-    cur.execute('SELECT * FROM matches')
+    cur.execute(f'SELECT * FROM bets WHERE user_id = {message.from_user.id}')
     data = cur.fetchall()
     conn.commit()
     for i in data:
-        mathList += i[0] + " :" + i[1] + " vs " + i[2]+"\n"
-    await message.reply(mathList)
+        await bot.send_message(message.from_user.id, text = f"{i[2]} - {i[3]}")
 
 
-@dp.message_handler(commands='createMatch')
+
+@dp.message_handler(Text(equals=["Winner"]))
+async def setWinner(message: types.Message):
+    if message.from_user.id == admin_id:
+        await bot.send_message(admin_id, text='Укажи название матча!')
+        await SetWinner.first()
+
+@dp.message_handler(state=SetWinner.W1)
+async def nameMatch(message: types.Message, state: FSMContext):
+    await state.update_data(match=message.text)
+    await message.answer("Кто выиграл?", parse_mode="HTML")
+    await SetWinner.next() 
+
+@dp.message_handler(state=SetWinner.W2)
+async def nameMatch(message: types.Message, state: FSMContext):
+    await state.update_data(matchWinner=message.text)
+    data = await state.get_data()
+    conn = sqlite3.connect('data.db')
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM bets')
+    www = cur.fetchall()
+    conn.commit()
+    for i in www:
+        if data['matchWinner'] == i[2]:
+            cur.execute(f'SELECT user_balance FROM users WHERE user_id = {i[1]}')
+            balance_user = cur.fetchone()
+            cur.execute(f'UPDATE users SET user_balance={balance_user[0] + (i[3]*2)} WHERE user_id={i[1]}')
+            cur.execute(f'DELETE FROM bets WHERE id = {i[0]}')
+            cur.execute(f'DELETE FROM matches WHERE firstTeam LIKE "{i[2]}" OR secondTeam LIKE "{i[2]}"')
+    conn.commit()
+    cur.execute('SELECT user_id FROM users')
+    data = cur.fetchall() 
+    for i in data:
+        await bot.send_message(i[0], text="Матч окончен!")
+    conn.commit()
+    await state.finish()
+
+
+@dp.message_handler(Text(equals=["CreateMatch"]))
 async def CreateMatch(message: types.Message):
     if message.from_user.id == admin_id:
         await bot.send_message(admin_id, text='Название мероприятия')
