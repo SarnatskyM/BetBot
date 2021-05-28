@@ -16,5 +16,4 @@ class SetBet(StatesGroup):
 class SetWinner(StatesGroup):
     W1 = State()
     W2 = State()
-    W3 = State()
     

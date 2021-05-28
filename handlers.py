@@ -91,8 +91,10 @@ async def inline_kb_answer_callback_handler(query: types.CallbackQuery):
     conn.commit()
     cur.execute(f'SELECT id FROM bets WHERE user_id={query.from_user.id} AND id_match={varb[1]}')
     data = cur.fetchone()
+    cur.execute(f'SELECT user_balance FROM users WHERE user_id = {query.from_user.id}')
+    balanceuser = cur.fetchone()
     if data==None:
-        cur.execute(f'INSERT INTO bets VALUES(NULL,"{query.from_user.id}", "{varb[0]}", NULL, "{varb[1]}")')
+        cur.execute(f'INSERT INTO bets VALUES(NULL,"{query.from_user.id}", "{varb[0]}", {query.from_user.id}, "{varb[1]}")')
         text = 'Отлично сработано! Выберите сумму'
         conn.commit()
         await bot.send_message(query.from_user.id, text , reply_markup=keyboard.betOnmatch)
@@ -106,9 +108,9 @@ async def inline_kb_answer_callback_handler(message: types.Message, state: FSMCo
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
     man_id = message.from_user.id
-    cur.execute(f'SELECT user_bet FROM bets WHERE user_id={man_id} AND user_bet = NULL')
+    cur.execute(f'SELECT user_bet FROM bets WHERE user_id={man_id} AND user_bet = {man_id}')
     data = cur.fetchone()
-    if data == None:
+    if data[0] == man_id:
         cur.execute(f'SELECT * FROM users WHERE user_id={man_id}')
         data = cur.fetchone()
         if message.text == '1000' and data[2]>=1000:
@@ -126,6 +128,7 @@ async def inline_kb_answer_callback_handler(message: types.Message, state: FSMCo
                 cur.execute(f'UPDATE bets SET user_bet={250} WHERE user_id={man_id}')
             else:
                 text = 'На вашем счету нет столько средств! Пополните счет'
+                cur.execute(f'DELETE FROM bets WHERE user_bet = {man_id}')
         conn.commit()
     else:
         text = 'Вы уже ставили на этот матч'
@@ -155,30 +158,35 @@ async def setWinner(message: types.Message):
 @dp.message_handler(state=SetWinner.W1)
 async def nameMatch(message: types.Message, state: FSMContext):
     await state.update_data(match=message.text)
-    await message.answer("Кто выиграл?", parse_mode="HTML")
+    await message.answer("Кто выиграл и проиграл?", parse_mode="HTML")
     await SetWinner.next() 
 
 @dp.message_handler(state=SetWinner.W2)
 async def nameMatch(message: types.Message, state: FSMContext):
     await state.update_data(matchWinner=message.text)
     data = await state.get_data()
+    wl = data['matchWinner']
+    wl = wl.split()
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
     cur.execute('SELECT * FROM bets')
     www = cur.fetchall()
     conn.commit()
     for i in www:
-        if data['matchWinner'] == i[2]:
+        if wl[0] == i[2]:
             cur.execute(f'SELECT user_balance FROM users WHERE user_id = {i[1]}')
             balance_user = cur.fetchone()
             cur.execute(f'UPDATE users SET user_balance={balance_user[0] + (i[3]*2)} WHERE user_id={i[1]}')
             cur.execute(f'DELETE FROM bets WHERE id = {i[0]}')
             cur.execute(f'DELETE FROM matches WHERE firstTeam LIKE "{i[2]}" OR secondTeam LIKE "{i[2]}"')
+        else:
+            if wl[1] == i[2]:
+                cur.execute(f'DELETE FROM bets WHERE id = {i[0]}')
     conn.commit()
     cur.execute('SELECT user_id FROM users')
     data = cur.fetchall() 
     for i in data:
-        await bot.send_message(i[0], text="Матч окончен!")
+        await bot.send_message(i[0], text="Матч окончен!\n Проверьте баланс")
     conn.commit()
     await state.finish()
 
