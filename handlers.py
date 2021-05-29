@@ -1,4 +1,3 @@
-from asyncio.windows_events import NULL
 from typing import Set
 from aiogram import types
 from aiogram.dispatcher.filters import Text
