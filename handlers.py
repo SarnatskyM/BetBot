@@ -33,9 +33,9 @@ async def send_welcome(message: types.Message):
         cur.execute(f'INSERT INTO users VALUES("{message.from_user.id}")')
         conn.commit()
     if message.from_user.id != admin_id:
-        await message.reply("Хотите поставить на матч?\nНапишите - /allMatches", reply_markup=keyboard.allCommands)
+        await message.reply("Хотите поставить на матч?\nПроверьте баланс", reply_markup=keyboard.allCommands)
     else:
-        await message.reply("Хотите поставить на матч?\nНапишите - /allMatches", reply_markup=keyboard.allCommandsAdmin)
+        await message.reply("Хотите поставить на матч?\nПроверьте баланс", reply_markup=keyboard.allCommandsAdmin)
 
 
 @dp.message_handler(Text(equals=["Баланс"]))
@@ -46,7 +46,7 @@ async def send_balance(message: types.Message):
     cur.execute(f"SELECT user_balance FROM users WHERE user_id = {man_id}")
     data = cur.fetchone()
     conn.commit()
-    await message.reply(f"Ваш счет: {data[0]}", reply_markup=keyboard.allCommands)
+    await message.reply(f"Ваш счет: {data[0]} койнов", reply_markup=keyboard.allCommands)
 
 async def delete_message(message: types.Message, sleep_time: int = 0):
     await asyncio.sleep(sleep_time)
@@ -68,7 +68,7 @@ async def send_allMatch(message: types.Message):
         )
         row_btns = (types.InlineKeyboardButton(text, callback_data=data) for text, data in text_and_data)
         keyboard_markup.row(*row_btns)
-        await message.reply(f"{i[1]}\n{i[2]} vs {i[3]}", reply_markup=keyboard_markup, reply=False)
+        await message.reply(f"Матч - {i[1]}\n____\n⠀⠀⠀⠀⠀{i[2]} vs {i[3]}", reply_markup=keyboard_markup, reply=False)
     man_id = message.from_user.id
     conn.commit()
     cur.execute(f"SELECT * from users WHERE user_id = {man_id}")
@@ -76,7 +76,7 @@ async def send_allMatch(message: types.Message):
     if data[2] > 0:
         msg = await message.reply("Кто выиграет?", reply=False)
     else:
-        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance", reply_markup=keyboard.allCommands)
+        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance", reply_markup=keyboard.allCommands, reply=False)
     conn.commit()
     asyncio.create_task(delete_message(msg, 30))
 
@@ -148,6 +148,22 @@ async def send_listbet(message: types.Message):
 
 
 
+@dp.message_handler(Text(equals=["count"]))
+async def get_count(message: types.Message):
+    if message.from_user.id == admin_id:
+        conn = sqlite3.connect('data.db')
+        cur = conn.cursor()
+        cur.execute(f'SELECT COUNT(*) FROM users')
+        data = cur.fetchone()
+        conn.commit()
+        await bot.send_message(admin_id, f'{data}')
+
+
+@dp.message_handler(Text(equals=["Магазин"]))
+async def get_count(message: types.Message):
+    await bot.send_message(message.from_user.id, "Магазин находится в разработке!")
+
+
 @dp.message_handler(Text(equals=["Winner"]))
 async def setWinner(message: types.Message):
     if message.from_user.id == admin_id:
@@ -163,8 +179,8 @@ async def nameMatch(message: types.Message, state: FSMContext):
 @dp.message_handler(state=SetWinner.W2)
 async def nameMatch(message: types.Message, state: FSMContext):
     await state.update_data(matchWinner=message.text)
-    data = await state.get_data()
-    wl = data['matchWinner']
+    dato = await state.get_data()
+    wl = dato['matchWinner']
     wl = wl.split()
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
@@ -185,7 +201,7 @@ async def nameMatch(message: types.Message, state: FSMContext):
     cur.execute('SELECT user_id FROM users')
     data = cur.fetchall() 
     for i in data:
-        await bot.send_message(i[0], text="Матч окончен!\n Проверьте баланс")
+        await bot.send_message(i[0], f"Матч - {dato['match']} окончен!\nПобеда за {wl[0]}\nПроверьте баланс")
     conn.commit()
     await state.finish()
 
@@ -210,17 +226,16 @@ async def nameMatch(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state=CreateFight.E3)
 async def nameMatch(message: types.Message, state: FSMContext):
-    global mathList
     await state.update_data(teamSecond=message.text)
-    data = await state.get_data()
+    dato = await state.get_data()
     conn = sqlite3.connect('data.db')
     cur = conn.cursor()
     cur.execute('CREATE TABLE IF NOT EXISTS matches(id INTEGER PRIMARY KEY,name_match TEXT, firstTeam TEXT, secondTeam TEXT)')
-    cur.execute(f'INSERT INTO matches VALUES(NULL,"{data["name"]}", "{data["teamFirst"]}","{data["teamSecond"]}")')
+    cur.execute(f'INSERT INTO matches VALUES(NULL,"{dato["name"]}", "{dato["teamFirst"]}","{dato["teamSecond"]}")')
     conn.commit()
     cur.execute('SELECT user_id FROM users')
     data = cur.fetchall() 
     for i in data:
-        await bot.send_message(i[0], text="Доступная новая ставка!")
+        await bot.send_message(i[0], f"Доступен новый матч!\n-{dato['name']}")
     conn.commit()
     await state.finish()
