@@ -200,8 +200,11 @@ async def nameMatch(message: types.Message, state: FSMContext):
     conn.commit()
     cur.execute('SELECT user_id FROM users')
     data = cur.fetchall() 
-    for i in data:
-        await bot.send_message(i[0], f"Матч - {dato['match']} окончен!\nПобеда за {wl[0]}\nПроверьте баланс")
+    try:
+        for i in data:
+            await bot.send_message(i[0], f"Матч - {dato['match']} окончен!\nПобеда за {wl[0]}\nПроверьте баланс")
+    except:
+        cur.execute(f'DELETE FROM users WHERE user_id = {i[0]}')
     conn.commit()
     await state.finish()
 
@@ -234,8 +237,11 @@ async def nameMatch(message: types.Message, state: FSMContext):
     cur.execute(f'INSERT INTO matches VALUES(NULL,"{dato["name"]}", "{dato["teamFirst"]}","{dato["teamSecond"]}")')
     conn.commit()
     cur.execute('SELECT user_id FROM users')
-    data = cur.fetchall() 
-    for i in data:
-        await bot.send_message(i[0], f"Доступен новый матч!\n-{dato['name']}")
+    data = cur.fetchall()
+    try:
+        for i in data:
+            await bot.send_message(i[0], f"Доступен новый матч!\n-{dato['name']}")
+    except:
+        cur.execute(f'DELETE FROM users WHERE user_id = {i[0]}')
     conn.commit()
     await state.finish()
