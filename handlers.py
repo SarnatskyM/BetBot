@@ -76,7 +76,7 @@ async def send_allMatch(message: types.Message):
     if data[2] > 0:
         msg = await message.reply("Кто выиграет?", reply=False)
     else:
-        msg = await message.reply("На вашем счету недостаточно средств\nПроверить баланс /balance", reply_markup=keyboard.allCommands, reply=False)
+        msg = await message.reply("На вашем счету недостаточно средств\nПроверьте баланс", reply_markup=keyboard.allCommands, reply=False)
     conn.commit()
     asyncio.create_task(delete_message(msg, 30))
 
