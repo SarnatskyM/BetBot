@@ -78,7 +78,7 @@ async def send_allMatch(message: types.Message):
     else:
         msg = await message.reply("На вашем счету недостаточно средств\nПроверьте баланс", reply_markup=keyboard.allCommands, reply=False)
     conn.commit()
-    asyncio.create_task(delete_message(msg, 30))
+    asyncio.create_task(delete_message(msg, 15))
 
 
 @dp.callback_query_handler()
@@ -170,6 +170,22 @@ async def setWinner(message: types.Message):
         await bot.send_message(admin_id, text='Укажи название матча!')
         await SetWinner.first()
 
+
+@dp.message_handler(Text(equals=["+b"]))
+async def update_balance(message: types.Message):
+    if message.from_user.id == admin_id:
+        conn = sqlite3.connect('data.db')
+        cur = conn.cursor()
+        cur.execute(f'SELECT * FROM users WHERE user_balance = 0')
+        data = cur.fetchall()
+        conn.commit()
+        for item in data:
+            if item[2] == 0:
+                cur.execute(f'UPDATE users SET user_balance = 500 WHERE user_id = {item[0]}')
+                bot.send_message(item[0], "Вам баланс пополнен!")
+        conn.commit()
+
+
 @dp.message_handler(state=SetWinner.W1)
 async def nameMatch(message: types.Message, state: FSMContext):
     await state.update_data(match=message.text)
@@ -187,13 +203,13 @@ async def nameMatch(message: types.Message, state: FSMContext):
     cur.execute('SELECT * FROM bets')
     www = cur.fetchall()
     conn.commit()
+    cur.execute(f'DELETE FROM matches WHERE firstTeam LIKE "{wl[0]}" OR secondTeam LIKE "{wl[1]}" OR firstTeam LIKE "{wl[1]}" OR secondTeam LIKE "{wl[0]}"')
     for i in www:
         if wl[0] == i[2]:
             cur.execute(f'SELECT user_balance FROM users WHERE user_id = {i[1]}')
             balance_user = cur.fetchone()
             cur.execute(f'UPDATE users SET user_balance={balance_user[0] + (i[3]*2)} WHERE user_id={i[1]}')
             cur.execute(f'DELETE FROM bets WHERE id = {i[0]}')
-            cur.execute(f'DELETE FROM matches WHERE firstTeam LIKE "{i[2]}" OR secondTeam LIKE "{i[2]}"')
         else:
             if wl[1] == i[2]:
                 cur.execute(f'DELETE FROM bets WHERE id = {i[0]}')

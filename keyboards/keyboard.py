@@ -22,7 +22,7 @@ allCommands = ReplyKeyboardMarkup(
         ],
 
         [
-            KeyboardButton(text="Магазин")
+            KeyboardButton(text="Магазин"),
         ]
     ],
     resize_keyboard=True
@@ -34,7 +34,8 @@ allCommandsAdmin = ReplyKeyboardMarkup(
         [
             KeyboardButton(text="Все матчи"),
             KeyboardButton(text="Список моих ставок"),
-            KeyboardButton(text="Баланс")
+            KeyboardButton(text="Баланс"),
+            KeyboardButton(text="+b")
         ],
 
         [
